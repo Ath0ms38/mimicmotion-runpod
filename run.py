@@ -385,8 +385,8 @@ def run_mimicmotion(
     pipeline = create_pipeline(infer_config, device)
     apply_patches(pipeline, gradio_progress=gradio_progress)
 
-    # Process each chunk
-    all_chunks = []
+    # Process each chunk (saved to disk for crash safety)
+    all_chunk_paths = []
     tmpdir = tempfile.mkdtemp(prefix="mimicmotion_")
 
     for chunk_idx in range(num_chunks):
@@ -439,16 +439,24 @@ def run_mimicmotion(
         )
 
         tracker.log(f"{chunk_label} Generated {chunk_frames.shape[0]} frames")
-        all_chunks.append(chunk_frames)
 
-        # Clean up GPU memory between chunks
+        # Save chunk to disk immediately (crash-safe)
+        chunk_path = os.path.join(tmpdir, f"chunk_{chunk_idx:03d}.pt")
+        torch.save(chunk_frames, chunk_path)
+        all_chunk_paths.append(chunk_path)
+        tracker.log(f"{chunk_label} Saved to {chunk_path}")
+
+        # Free GPU + CPU memory
+        del chunk_frames
         torch.cuda.empty_cache()
 
-    if not all_chunks:
+    if not all_chunk_paths:
         raise RuntimeError("No chunks were processed successfully")
 
-    # Blend and assemble chunks
+    # Load chunks back and blend
     tracker.log(f"\n{'='*50}")
+    all_chunks = [torch.load(p, weights_only=True) for p in all_chunk_paths]
+
     if len(all_chunks) > 1:
         tracker.log(f"Blending {len(all_chunks)} chunks with {CHUNK_BLEND_FRAMES}-frame crossfade...")
         if gradio_progress:
