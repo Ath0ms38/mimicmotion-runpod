@@ -385,8 +385,11 @@ def run_mimicmotion(
     pipeline = create_pipeline(infer_config, device)
     apply_patches(pipeline, gradio_progress=gradio_progress)
 
-    # Process each chunk (saved to disk for crash safety)
+    # Process each chunk (saved to /workspace/ for crash safety + persistence)
     all_chunk_paths = []
+    ts = datetime.now().strftime("%Y%m%d_%H%M%S")
+    chunks_dir = f"/workspace/chunks_{ts}"
+    os.makedirs(chunks_dir, exist_ok=True)
     tmpdir = tempfile.mkdtemp(prefix="mimicmotion_")
 
     for chunk_idx in range(num_chunks):
@@ -440,8 +443,8 @@ def run_mimicmotion(
 
         tracker.log(f"{chunk_label} Generated {chunk_frames.shape[0]} frames")
 
-        # Save chunk to disk immediately (crash-safe)
-        chunk_path = os.path.join(tmpdir, f"chunk_{chunk_idx:03d}.pt")
+        # Save chunk to /workspace/ immediately (survives crashes + restarts)
+        chunk_path = os.path.join(chunks_dir, f"chunk_{chunk_idx:03d}.pt")
         torch.save(chunk_frames, chunk_path)
         all_chunk_paths.append(chunk_path)
         tracker.log(f"{chunk_label} Saved to {chunk_path}")
