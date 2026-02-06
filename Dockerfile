@@ -30,8 +30,7 @@ COPY MimicMotion/ /app/MimicMotion/
 
 # Copy dependency spec and install
 COPY pyproject.toml /app/
-RUN --mount=type=cache,target=/root/.cache/uv \
-    uv sync --no-install-project
+RUN uv sync --no-install-project
 
 # Copy application code
 COPY run.py download_models.py mimicmotion_patch.py app.py start.sh /app/
