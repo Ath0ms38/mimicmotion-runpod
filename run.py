@@ -187,10 +187,10 @@ def _run_pipeline(pipeline, image_pixels, pose_pixels, device, task_config, trac
     generator = torch.Generator(device=device)
     generator.manual_seed(task_config.seed)
 
-    # Determine tile count for progress estimate
+    # Clamp tile_size to actual frame count (avoids empty indices in pipeline tiling)
     num_frames = pose_pixels.size(0)
-    tile_size = task_config.num_frames
-    tile_overlap = task_config.frames_overlap
+    tile_size = min(task_config.num_frames, num_frames)
+    tile_overlap = min(task_config.frames_overlap, tile_size - 1)
 
     if tracker:
         indices_count = len(
@@ -208,8 +208,8 @@ def _run_pipeline(pipeline, image_pixels, pose_pixels, device, task_config, trac
         image_pil_list,
         image_pose=pose_pixels,
         num_frames=pose_pixels.size(0),
-        tile_size=task_config.num_frames,
-        tile_overlap=task_config.frames_overlap,
+        tile_size=tile_size,
+        tile_overlap=tile_overlap,
         height=pose_pixels.shape[-2],
         width=pose_pixels.shape[-1],
         fps=7,
