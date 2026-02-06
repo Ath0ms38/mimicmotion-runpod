@@ -1,0 +1,22 @@
+# Media files (too large for git)
+*.mp4
+*.jpg
+*.jpeg
+*.png
+
+# Model weights
+*.pth
+*.onnx
+*.safetensors
+
+# Python
+__pycache__/
+*.pyc
+*.egg-info/
+.venv/
+
+# UV lock (regenerated on install)
+uv.lock
+
+# OS
+.DS_Store

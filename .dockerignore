@@ -1,0 +1,13 @@
+*.mp4
+*.jpg
+*.jpeg
+*.png
+*.pth
+*.onnx
+*.safetensors
+__pycache__/
+*.pyc
+.git/
+.venv/
+*.egg-info/
+uv.lock
