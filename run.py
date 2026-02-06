@@ -247,32 +247,31 @@ def _blend_chunks(chunks, blend_frames):
     if len(chunks) == 1:
         return chunks[0]
 
+    # If any chunk is too small for blending, just concatenate without blending
+    min_chunk_len = min(c.shape[0] for c in chunks)
+    if blend_frames <= 0 or min_chunk_len <= blend_frames:
+        return torch.cat(chunks, dim=0)
+
     result_parts = []
     for i, chunk in enumerate(chunks):
         if i == 0:
             # First chunk: keep everything except the last blend_frames
             result_parts.append(chunk[:-blend_frames])
-        elif i == len(chunks) - 1:
-            # Last chunk: blend the first blend_frames with previous tail
-            prev_tail = chunks[i - 1][-blend_frames:]
-            curr_head = chunk[:blend_frames]
-
-            # Linear crossfade weights: (blend_frames, 1, 1, 1) for FCHW
-            weights = torch.linspace(1.0, 0.0, blend_frames).view(-1, 1, 1, 1)
-            blended = (prev_tail.float() * weights + curr_head.float() * (1 - weights)).to(torch.uint8)
-
-            result_parts.append(blended)
-            result_parts.append(chunk[blend_frames:])
         else:
-            # Middle chunks: blend start, keep middle, leave end for next blend
+            # Blend overlap region with previous chunk's tail
             prev_tail = chunks[i - 1][-blend_frames:]
             curr_head = chunk[:blend_frames]
 
             weights = torch.linspace(1.0, 0.0, blend_frames).view(-1, 1, 1, 1)
             blended = (prev_tail.float() * weights + curr_head.float() * (1 - weights)).to(torch.uint8)
-
             result_parts.append(blended)
-            result_parts.append(chunk[blend_frames:-blend_frames])
+
+            if i == len(chunks) - 1:
+                # Last chunk: append everything after the blend region
+                result_parts.append(chunk[blend_frames:])
+            else:
+                # Middle chunk: append middle, hold back tail for next blend
+                result_parts.append(chunk[blend_frames:-blend_frames])
 
     return torch.cat(result_parts, dim=0)
 
@@ -312,9 +311,9 @@ def run_mimicmotion(
     """
     from mimicmotion.utils.loader import create_pipeline
     from mimicmotion.utils.utils import save_to_mp4
-    from torchvision.io import write_video
 
     # Use float16 for inference (as in MimicMotion's inference.py)
+    original_dtype = torch.get_default_dtype()
     torch.set_default_dtype(torch.float16)
 
     start_clock = time.time()
@@ -333,12 +332,24 @@ def run_mimicmotion(
     video_duration = video_info["duration"] if video_info else 0
     video_fps = video_info["fps"] if video_info else 25.0
 
+    if video_duration <= 0:
+        raise ValueError(
+            f"Could not determine video duration for {video_path}. "
+            "The file may be corrupt or in an unsupported format."
+        )
+
     # Clamp time range
     start_time = max(0.0, float(start_time))
     if end_time is None or end_time <= 0:
         end_time = video_duration
     end_time = min(float(end_time), video_duration)
     selected_duration = end_time - start_time
+
+    if selected_duration <= 0:
+        raise ValueError(
+            f"Invalid time range: start={start_time:.1f}s, end={end_time:.1f}s "
+            f"(video is {video_duration:.1f}s)"
+        )
 
     # Calculate how many source frames MimicMotion uses per chunk
     # Each chunk produces num_frames output frames from num_frames*sample_stride source frames
@@ -485,6 +496,9 @@ def run_mimicmotion(
     output_duration = total_frames / fps
     tracker.log(f"Done! {total_frames} frames, {output_duration:.1f}s video, "
                 f"total time: {int(elapsed // 60)}m {int(elapsed % 60)}s")
+
+    # Restore default dtype
+    torch.set_default_dtype(original_dtype)
 
     # Cleanup temp files
     import shutil

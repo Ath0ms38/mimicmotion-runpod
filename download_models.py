@@ -149,8 +149,14 @@ def create_symlinks():
     ]
 
     for src, dst in links:
-        if dst.is_symlink() or dst.exists():
-            dst.unlink() if dst.is_symlink() else None
+        if dst.is_symlink():
+            dst.unlink()
+        elif dst.exists():
+            import shutil
+            if dst.is_dir():
+                shutil.rmtree(dst)
+            else:
+                dst.unlink()
         if src.exists():
             dst.symlink_to(src)
             print(f"  [link] {dst} -> {src}", flush=True)
