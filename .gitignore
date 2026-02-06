@@ -1,9 +1,3 @@
-# Media files (too large for git)
-*.mp4
-*.jpg
-*.jpeg
-*.png
-
 # Model weights
 *.pth
 *.onnx
@@ -20,3 +14,9 @@ uv.lock
 
 # OS
 .DS_Store
+
+# MimicMotion extras
+MimicMotion/assets/
+
+# Original long-named video (we keep the renamed copy)
+YTDown.com_*.mp4

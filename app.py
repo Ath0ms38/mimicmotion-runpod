@@ -7,11 +7,16 @@ auto-chunking for full-length videos, real-time progress bar with ETA,
 output video preview, and a frame gallery.
 """
 
+import os
 import subprocess
 import json
 
 import gradio as gr
 from run import run_mimicmotion
+
+SAMPLES_DIR = "/app/samples"
+DEFAULT_IMAGE = os.path.join(SAMPLES_DIR, "IMG_8502.jpg")
+DEFAULT_VIDEO = os.path.join(SAMPLES_DIR, "caramell_dansen.mp4")
 
 
 def get_video_duration(video_path):
@@ -127,10 +132,12 @@ with gr.Blocks(title="MimicMotion", theme=gr.themes.Soft()) as demo:
             image_input = gr.Image(
                 label="Reference Image",
                 type="filepath",
+                value=DEFAULT_IMAGE if os.path.exists(DEFAULT_IMAGE) else None,
                 height=400,
             )
             video_input = gr.Video(
                 label="Motion Source Video",
+                value=DEFAULT_VIDEO if os.path.exists(DEFAULT_VIDEO) else None,
                 height=400,
             )
             video_info = gr.Textbox(

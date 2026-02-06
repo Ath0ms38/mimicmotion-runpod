@@ -1,7 +1,3 @@
-*.mp4
-*.jpg
-*.jpeg
-*.png
 *.pth
 *.onnx
 *.safetensors
@@ -11,3 +7,5 @@ __pycache__/
 .venv/
 *.egg-info/
 uv.lock
+MimicMotion/assets/
+YTDown.com_*.mp4

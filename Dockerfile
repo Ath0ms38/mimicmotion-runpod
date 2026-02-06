@@ -35,6 +35,9 @@ RUN uv sync --no-install-project
 # Copy application code
 COPY run.py download_models.py mimicmotion_patch.py app.py start.sh /app/
 
+# Bundle sample image and video
+COPY IMG_8502.jpg caramell_dansen.mp4 /app/samples/
+
 # ============================================================
 # Stage 2: Runtime image
 # ============================================================
