@@ -52,27 +52,36 @@ MAX_FRAMES_PER_CHUNK = 72
 # Overlap between chunks for crossfade blending
 CHUNK_BLEND_FRAMES = 8
 
+# Cached pipeline singleton (avoids reloading ~8GB from disk on each call)
+_cached_pipeline = None
+
 
 def _get_video_info(video_path):
     """Get video duration, fps, and frame count using ffprobe."""
-    cmd = [
-        "ffprobe", "-v", "quiet", "-print_format", "json",
-        "-show_streams", "-select_streams", "v:0", str(video_path),
-    ]
-    result = subprocess.run(cmd, capture_output=True, text=True)
-    if result.returncode != 0:
-        return None
-
     import json
-    data = json.loads(result.stdout)
-    stream = data["streams"][0]
+    try:
+        cmd = [
+            "ffprobe", "-v", "quiet", "-print_format", "json",
+            "-show_streams", "-select_streams", "v:0", str(video_path),
+        ]
+        result = subprocess.run(cmd, capture_output=True, text=True)
+        if result.returncode != 0:
+            return None
 
-    fps_parts = stream.get("r_frame_rate", "25/1").split("/")
-    fps = float(fps_parts[0]) / float(fps_parts[1]) if len(fps_parts) == 2 else 25.0
-    duration = float(stream.get("duration", 0))
-    nb_frames = int(stream.get("nb_frames", 0))
+        data = json.loads(result.stdout)
+        streams = data.get("streams")
+        if not streams:
+            return None
+        stream = streams[0]
 
-    return {"fps": fps, "duration": duration, "nb_frames": nb_frames}
+        fps_parts = stream.get("r_frame_rate", "25/1").split("/")
+        fps = float(fps_parts[0]) / float(fps_parts[1]) if len(fps_parts) == 2 else 25.0
+        duration = float(stream.get("duration", 0))
+        nb_frames = int(stream.get("nb_frames", 0))
+
+        return {"fps": fps, "duration": duration, "nb_frames": nb_frames}
+    except (KeyError, IndexError, ValueError, json.JSONDecodeError):
+        return None
 
 
 def _trim_video(video_path, start_sec, end_sec, output_path):
@@ -225,13 +234,12 @@ def _run_pipeline(pipeline, image_pixels, pose_pixels, device, task_config, trac
 
     # Convert to uint8, skip first frame (ref image) — exactly as in inference.py
     video_frames = (frames * 255.0).to(torch.uint8)
-    for vid_idx in range(video_frames.shape[0]):
-        _video_frames = video_frames[vid_idx, 1:]
+    video_frames = video_frames[0, 1:]  # batch=0, skip ref image frame
 
     if tracker:
-        tracker.log(f"Generated {_video_frames.shape[0]} output frames")
+        tracker.log(f"Generated {video_frames.shape[0]} output frames")
 
-    return _video_frames
+    return video_frames
 
 
 def _blend_chunks(chunks, blend_frames):
@@ -309,12 +317,53 @@ def run_mimicmotion(
         dict with 'output_path', 'elapsed', 'num_frames', 'resolution',
               'logs', 'preview_frames', 'chunks_processed'
     """
-    from mimicmotion.utils.loader import create_pipeline
-    from mimicmotion.utils.utils import save_to_mp4
-
     # Use float16 for inference (as in MimicMotion's inference.py)
     original_dtype = torch.get_default_dtype()
     torch.set_default_dtype(torch.float16)
+
+    try:
+        return _run_mimicmotion_inner(
+            image_path=image_path,
+            video_path=video_path,
+            output_path=output_path,
+            num_frames=num_frames,
+            resolution=resolution,
+            steps=steps,
+            guidance_scale=guidance_scale,
+            noise_aug_strength=noise_aug_strength,
+            sample_stride=sample_stride,
+            fps=fps,
+            seed=seed,
+            frames_overlap=frames_overlap,
+            start_time=start_time,
+            end_time=end_time,
+            auto_chunk=auto_chunk,
+            gradio_progress=gradio_progress,
+        )
+    finally:
+        torch.set_default_dtype(original_dtype)
+
+
+def _run_mimicmotion_inner(
+    image_path,
+    video_path,
+    output_path,
+    num_frames,
+    resolution,
+    steps,
+    guidance_scale,
+    noise_aug_strength,
+    sample_stride,
+    fps,
+    seed,
+    frames_overlap,
+    start_time,
+    end_time,
+    auto_chunk,
+    gradio_progress,
+):
+    from mimicmotion.utils.loader import create_pipeline
+    from mimicmotion.utils.utils import save_to_mp4
 
     start_clock = time.time()
 
@@ -393,7 +442,13 @@ def run_mimicmotion(
     if gradio_progress:
         gradio_progress(0.0, desc="Loading pipeline...")
 
-    pipeline = create_pipeline(infer_config, device)
+    global _cached_pipeline
+    if _cached_pipeline is None:
+        tracker.log("Loading pipeline (first run, will be cached)...")
+        _cached_pipeline = create_pipeline(infer_config, device)
+    else:
+        tracker.log("Using cached pipeline")
+    pipeline = _cached_pipeline
     apply_patches(pipeline, gradio_progress=gradio_progress)
 
     # Process each chunk (saved to /workspace/ for crash safety + persistence)
@@ -460,8 +515,8 @@ def run_mimicmotion(
         all_chunk_paths.append(chunk_path)
         tracker.log(f"{chunk_label} Saved to {chunk_path}")
 
-        # Free GPU + CPU memory
-        del chunk_frames
+        # Free GPU + CPU memory from this chunk
+        del chunk_frames, pose_pixels, image_pixels, ref_image
         torch.cuda.empty_cache()
 
     if not all_chunk_paths:
@@ -496,9 +551,6 @@ def run_mimicmotion(
     output_duration = total_frames / fps
     tracker.log(f"Done! {total_frames} frames, {output_duration:.1f}s video, "
                 f"total time: {int(elapsed // 60)}m {int(elapsed % 60)}s")
-
-    # Restore default dtype
-    torch.set_default_dtype(original_dtype)
 
     # Cleanup temp files
     import shutil

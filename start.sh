@@ -19,13 +19,6 @@ echo "Checking model weights..."
 python /app/download_models.py
 echo ""
 
-# Create symlinks from MimicMotion repo to weight locations
-mkdir -p /app/MimicMotion/models
-ln -sfn /workspace/models/DWPose /app/MimicMotion/models/DWPose
-ln -sfn /workspace/models/MimicMotion_1-1.pth /app/MimicMotion/models/MimicMotion_1-1.pth
-echo "Model symlinks created."
-
-echo ""
 echo "============================================"
 echo "  Starting Gradio UI on port 7860"
 echo "============================================"
