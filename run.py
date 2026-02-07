@@ -86,7 +86,7 @@ def extract_frames_from_video(
     frames = vr.get_batch(frame_indices).asnumpy()
 
     paths = []
-    for i, frame in enumerate(frames):
+    for i, frame in enumerate(tqdm(frames, desc="Saving frames")):
         path = os.path.join(output_dir, f"frame_{i}.png")
         cv2.imwrite(path, cv2.cvtColor(frame, cv2.COLOR_RGB2BGR))
         paths.append(path)
@@ -281,7 +281,7 @@ def extract_poses(
 
     # Rescale poses and draw
     paths = []
-    for i, detected_pose in enumerate(detected_poses):
+    for i, detected_pose in enumerate(tqdm(detected_poses, desc="Drawing poses")):
         detected_pose["bodies"]["candidate"] = detected_pose["bodies"]["candidate"] * a + b
         detected_pose["faces"] = detected_pose["faces"] * a + b
         detected_pose["hands"] = detected_pose["hands"] * a + b
@@ -780,7 +780,7 @@ def _run_chunked(
                 pipeline, image_path, poses_dir, chunk_pose_files,
                 face_embedding, width, height, guidance_scale,
                 num_inference_steps, tile_size, frames_overlap,
-                noise_aug_strength, decode_chunk_size, seed + ci,
+                noise_aug_strength, decode_chunk_size, seed,
                 tracker,
             )
             # Save to persistent volume immediately
