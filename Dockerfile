@@ -25,9 +25,11 @@ COPY --from=ghcr.io/astral-sh/uv:latest /uv /uvx /usr/local/bin/
 
 WORKDIR /app
 
-# Copy StableAnimator repo (source code only, no assets/weights)
-COPY StableAnimator/animation/ /app/StableAnimator/animation/
-COPY StableAnimator/DWPose/ /app/StableAnimator/DWPose/
+# Clone StableAnimator and keep only source code (no assets/weights)
+RUN git clone --depth 1 https://github.com/Francis-Rings/StableAnimator.git /tmp/StableAnimator \
+    && mv /tmp/StableAnimator/animation /app/StableAnimator/animation \
+    && mv /tmp/StableAnimator/DWPose /app/StableAnimator/DWPose \
+    && rm -rf /tmp/StableAnimator
 
 # Copy dependency spec and install
 COPY pyproject.toml /app/

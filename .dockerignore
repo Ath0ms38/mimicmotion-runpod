@@ -9,8 +9,7 @@ __pycache__/
 uv.lock
 archive/
 MimicMotion/
-StableAnimator/assets/
-StableAnimator/.git/
+StableAnimator/
 YTDown.com_*.mp4
 *.mp4
 *.jpg
