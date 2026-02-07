@@ -2,7 +2,7 @@
 set -e
 
 echo "============================================"
-echo "  MimicMotion - RunPod Container"
+echo "  StableAnimator - RunPod Container"
 echo "============================================"
 echo ""
 
@@ -19,13 +19,49 @@ echo "Checking model weights..."
 python /app/download_models.py
 echo ""
 
+# Look for input files on persistent volume
+IMAGE="${SA_IMAGE:-/workspace/input/image.png}"
+VIDEO="${SA_VIDEO:-/workspace/input/video.mp4}"
+OUTPUT="${SA_OUTPUT:-/workspace/output.mp4}"
+
+if [ ! -f "$IMAGE" ]; then
+    echo "ERROR: Reference image not found: $IMAGE"
+    echo ""
+    echo "Upload your files to /workspace/input/ and set env vars:"
+    echo "  SA_IMAGE=/workspace/input/image.png"
+    echo "  SA_VIDEO=/workspace/input/video.mp4"
+    echo "  SA_OUTPUT=/workspace/output.mp4"
+    echo ""
+    echo "Or run manually:"
+    echo "  python /app/run.py --image <path> --video <path>"
+    exit 1
+fi
+
+if [ ! -f "$VIDEO" ]; then
+    echo "ERROR: Motion video not found: $VIDEO"
+    echo ""
+    echo "Upload your files to /workspace/input/ and set env vars:"
+    echo "  SA_IMAGE=/workspace/input/image.png"
+    echo "  SA_VIDEO=/workspace/input/video.mp4"
+    echo "  SA_OUTPUT=/workspace/output.mp4"
+    echo ""
+    echo "Or run manually:"
+    echo "  python /app/run.py --image <path> --video <path>"
+    exit 1
+fi
+
 echo "============================================"
-echo "  Starting Gradio UI on port 7860"
+echo "  Running StableAnimator inference"
 echo "============================================"
-echo ""
-echo "CLI usage:"
-echo "  python /app/run.py --image /workspace/image.jpg --video /workspace/video.mp4"
+echo "  Image:  $IMAGE"
+echo "  Video:  $VIDEO"
+echo "  Output: $OUTPUT"
 echo ""
 
-# Launch Gradio UI
-exec python /app/app.py
+# Pass through any extra args via SA_ARGS env var
+# e.g. SA_ARGS="--width 576 --height 1024 --steps 30"
+exec python /app/run.py \
+    --image "$IMAGE" \
+    --video "$VIDEO" \
+    --output "$OUTPUT" \
+    ${SA_ARGS:-}

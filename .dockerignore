@@ -7,5 +7,12 @@ __pycache__/
 .venv/
 *.egg-info/
 uv.lock
-MimicMotion/assets/
+archive/
+MimicMotion/
+StableAnimator/assets/
+StableAnimator/.git/
 YTDown.com_*.mp4
+*.mp4
+*.jpg
+*.jpeg
+*.png

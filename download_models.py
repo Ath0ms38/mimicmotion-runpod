@@ -1,158 +1,154 @@
 """
-download_models.py - Download MimicMotion model weights to /workspace/models/
+Idempotent model downloader for StableAnimator on RunPod.
 
-Downloads:
-  1. DWPose ONNX models (yolox_l.onnx, dw-ll_ucoco_384.onnx) from yzd-v/DWPose
-  2. MimicMotion_1-1.pth checkpoint from tencent/MimicMotion
-  3. stabilityai/stable-video-diffusion-img2vid-xt-1-1 (full model via snapshot_download)
+Downloads all required weights to /workspace/models/ (persistent volume)
+and creates symlinks so StableAnimator's hardcoded relative paths resolve.
 
-All downloads are idempotent -- files that already exist are skipped.
+Models from HuggingFace: FrancisRing/StableAnimator
 """
 
 import os
-import sys
-import time
+import shutil
 from pathlib import Path
 
-import huggingface_hub
 from huggingface_hub import hf_hub_download, snapshot_download
-from huggingface_hub.errors import GatedRepoError
-from tqdm import tqdm
 
-# Force tqdm progress bars to show in Docker
-huggingface_hub.utils.tqdm.are_progress_bars_disabled = lambda: False
-
-HF_TOKEN = os.environ.get("HF_TOKEN")
-
+HF_REPO = "FrancisRing/StableAnimator"
 MODELS_DIR = Path(os.environ.get("MODELS_DIR", "/workspace/models"))
-MIMICMOTION_MODELS_DIR = Path(
-    os.environ.get("MIMICMOTION_MODELS_DIR", "/app/MimicMotion/models")
-)
-
-# Expected downloads with approximate sizes for the overall progress
-DOWNLOADS = [
-    ("DWPose: yolox_l.onnx", "~217 MB"),
-    ("DWPose: dw-ll_ucoco_384.onnx", "~134 MB"),
-    ("MimicMotion_1-1.pth", "~3.0 GB"),
-    ("SVD model (multiple files)", "~5.0 GB"),
-]
+APP_DIR = Path("/app")
 
 
-def _format_size(size_bytes):
-    """Format bytes into human-readable string."""
-    for unit in ["B", "KB", "MB", "GB"]:
-        if size_bytes < 1024:
-            return f"{size_bytes:.1f} {unit}"
-        size_bytes /= 1024
-    return f"{size_bytes:.1f} TB"
+def download_svd():
+    """Download Stable Video Diffusion base model."""
+    svd_dir = MODELS_DIR / "SVD" / "stable-video-diffusion-img2vid-xt"
+    if svd_dir.exists() and (svd_dir / "model_index.json").exists():
+        print("  [skip] SVD base model already exists", flush=True)
+        return
+
+    print("  [download] SVD base model (~5 GB)...", flush=True)
+    snapshot_download(
+        repo_id="stabilityai/stable-video-diffusion-img2vid-xt",
+        local_dir=str(svd_dir),
+    )
+    print("  [done] SVD base model", flush=True)
 
 
-def download_dwpose_models(overall_bar):
-    """Download DWPose ONNX models for pose detection."""
+def download_animation_weights():
+    """Download StableAnimator-specific weights (pose_net, face_encoder, unet)."""
+    anim_dir = MODELS_DIR / "Animation"
+    anim_dir.mkdir(parents=True, exist_ok=True)
+
+    files = [
+        ("Animation/pose_net.pth", "pose_net.pth"),
+        ("Animation/face_encoder.pth", "face_encoder.pth"),
+        ("Animation/unet.pth", "unet.pth"),
+    ]
+
+    for hf_path, local_name in files:
+        local_path = anim_dir / local_name
+        if local_path.exists():
+            print(f"  [skip] {local_name} already exists", flush=True)
+            continue
+        print(f"  [download] {local_name}...", flush=True)
+        hf_hub_download(
+            repo_id=HF_REPO,
+            filename=hf_path,
+            local_dir=str(MODELS_DIR),
+        )
+        print(f"  [done] {local_name}", flush=True)
+
+
+def download_dwpose():
+    """Download DWPose ONNX models."""
     dwpose_dir = MODELS_DIR / "DWPose"
     dwpose_dir.mkdir(parents=True, exist_ok=True)
 
     files = [
-        ("yzd-v/DWPose", "yolox_l.onnx"),
-        ("yzd-v/DWPose", "dw-ll_ucoco_384.onnx"),
+        ("DWPose/yolox_l.onnx", "yolox_l.onnx"),
+        ("DWPose/dw-ll_ucoco_384.onnx", "dw-ll_ucoco_384.onnx"),
     ]
 
-    for repo_id, filename in files:
-        target = dwpose_dir / filename
-        if target.exists():
-            size = _format_size(target.stat().st_size)
-            print(f"  [skip] {filename} ({size}) already exists", flush=True)
-            overall_bar.update(1)
+    for hf_path, local_name in files:
+        local_path = dwpose_dir / local_name
+        if local_path.exists():
+            print(f"  [skip] {local_name} already exists", flush=True)
             continue
-
-        print(f"  Downloading {filename} from {repo_id}...", flush=True)
+        print(f"  [download] {local_name}...", flush=True)
         hf_hub_download(
-            repo_id=repo_id,
-            filename=filename,
-            local_dir=str(dwpose_dir),
-            token=HF_TOKEN,
+            repo_id=HF_REPO,
+            filename=hf_path,
+            local_dir=str(MODELS_DIR),
         )
-        size = _format_size((dwpose_dir / filename).stat().st_size)
-        print(f"  [done] {filename} ({size})", flush=True)
-        overall_bar.update(1)
+        print(f"  [done] {local_name}", flush=True)
 
 
-def download_mimicmotion_checkpoint(overall_bar):
-    """Download MimicMotion_1-1.pth checkpoint."""
-    MODELS_DIR.mkdir(parents=True, exist_ok=True)
-    target = MODELS_DIR / "MimicMotion_1-1.pth"
+def download_insightface():
+    """Download InsightFace antelopev2 models."""
+    ante_dir = MODELS_DIR / "antelopev2"
+    ante_dir.mkdir(parents=True, exist_ok=True)
 
-    if target.exists():
-        size = _format_size(target.stat().st_size)
-        print(f"  [skip] MimicMotion_1-1.pth ({size}) already exists", flush=True)
-        overall_bar.update(1)
-        return
+    files = [
+        "models/antelopev2/1k3d68.onnx",
+        "models/antelopev2/2d106det.onnx",
+        "models/antelopev2/genderage.onnx",
+        "models/antelopev2/glintr100.onnx",
+        "models/antelopev2/scrfd_10g_bnkps.onnx",
+    ]
 
-    print("  Downloading MimicMotion_1-1.pth from tencent/MimicMotion...", flush=True)
-    hf_hub_download(
-        repo_id="tencent/MimicMotion",
-        filename="MimicMotion_1-1.pth",
-        local_dir=str(MODELS_DIR),
-        token=HF_TOKEN,
-    )
-    size = _format_size(target.stat().st_size)
-    print(f"  [done] MimicMotion_1-1.pth ({size})", flush=True)
-    overall_bar.update(1)
-
-
-def download_svd_model(overall_bar):
-    """Download Stable Video Diffusion model."""
-    svd_dir = MODELS_DIR / "stable-video-diffusion-img2vid-xt-1-1"
-
-    if svd_dir.exists() and any(svd_dir.iterdir()):
-        total = sum(f.stat().st_size for f in svd_dir.rglob("*") if f.is_file())
-        print(f"  [skip] SVD model ({_format_size(total)}) already exists", flush=True)
-        overall_bar.update(1)
-        return
-
-    print(
-        "  Downloading stabilityai/stable-video-diffusion-img2vid-xt-1-1...",
-        flush=True,
-    )
-    try:
-        snapshot_download(
-            repo_id="stabilityai/stable-video-diffusion-img2vid-xt-1-1",
-            local_dir=str(svd_dir),
-            token=HF_TOKEN,
+    for hf_path in files:
+        local_name = Path(hf_path).name
+        local_path = ante_dir / local_name
+        if local_path.exists():
+            print(f"  [skip] {local_name} already exists", flush=True)
+            continue
+        print(f"  [download] {local_name}...", flush=True)
+        hf_hub_download(
+            repo_id=HF_REPO,
+            filename=hf_path,
+            local_dir=str(MODELS_DIR),
         )
-    except GatedRepoError:
-        print(
-            "\n"
-            "  ERROR: The SVD model is a gated repo. To fix this:\n"
-            "  1. Accept the terms at:\n"
-            "     https://huggingface.co/stabilityai/stable-video-diffusion-img2vid-xt-1-1\n"
-            "  2. Create a token at: https://huggingface.co/settings/tokens\n"
-            "  3. Run with: docker run -e HF_TOKEN=hf_xxx ...\n",
-            flush=True,
-        )
-        raise SystemExit(1)
-    total = sum(f.stat().st_size for f in svd_dir.rglob("*") if f.is_file())
-    print(f"  [done] SVD model ({_format_size(total)})", flush=True)
-    overall_bar.update(1)
+        # HF downloads to MODELS_DIR/models/antelopev2/ but we want MODELS_DIR/antelopev2/
+        hf_downloaded = MODELS_DIR / hf_path
+        if hf_downloaded.exists() and hf_downloaded != local_path:
+            shutil.move(str(hf_downloaded), str(local_path))
+        print(f"  [done] {local_name}", flush=True)
+
+    # Clean up the nested models/ dir if it exists and is empty
+    nested = MODELS_DIR / "models" / "antelopev2"
+    if nested.exists() and not any(nested.iterdir()):
+        nested.rmdir()
+    nested_parent = MODELS_DIR / "models"
+    if nested_parent.exists() and not any(nested_parent.iterdir()):
+        nested_parent.rmdir()
 
 
 def create_symlinks():
-    """Create symlinks from MimicMotion repo models/ to /workspace/models/."""
-    MIMICMOTION_MODELS_DIR.mkdir(parents=True, exist_ok=True)
+    """Create symlinks so StableAnimator's hardcoded relative paths resolve.
+
+    StableAnimator expects (relative to CWD=/app):
+      checkpoints/stable-video-diffusion-img2vid-xt/  -> SVD base
+      checkpoints/Animation/                          -> Animation weights
+      checkpoints/DWPose/                             -> DWPose ONNX models
+      models/antelopev2/                              -> InsightFace models
+    """
+    print("Creating symlinks...", flush=True)
 
     links = [
-        (MODELS_DIR / "DWPose", MIMICMOTION_MODELS_DIR / "DWPose"),
-        (
-            MODELS_DIR / "MimicMotion_1-1.pth",
-            MIMICMOTION_MODELS_DIR / "MimicMotion_1-1.pth",
-        ),
+        (MODELS_DIR / "SVD" / "stable-video-diffusion-img2vid-xt",
+         APP_DIR / "checkpoints" / "stable-video-diffusion-img2vid-xt"),
+        (MODELS_DIR / "Animation",
+         APP_DIR / "checkpoints" / "Animation"),
+        (MODELS_DIR / "DWPose",
+         APP_DIR / "checkpoints" / "DWPose"),
+        (MODELS_DIR / "antelopev2",
+         APP_DIR / "models" / "antelopev2"),
     ]
 
     for src, dst in links:
+        dst.parent.mkdir(parents=True, exist_ok=True)
         if dst.is_symlink():
             dst.unlink()
         elif dst.exists():
-            import shutil
             if dst.is_dir():
                 shutil.rmtree(dst)
             else:
@@ -160,40 +156,36 @@ def create_symlinks():
         if src.exists():
             dst.symlink_to(src)
             print(f"  [link] {dst} -> {src}", flush=True)
+        else:
+            print(f"  [warn] source not found: {src}", flush=True)
 
 
 def main():
     print("=" * 60, flush=True)
-    print("MimicMotion Model Downloader", flush=True)
+    print("StableAnimator Model Downloader", flush=True)
+    print(f"  Models dir: {MODELS_DIR}", flush=True)
+    print(f"  HF repo:    {HF_REPO}", flush=True)
     print("=" * 60, flush=True)
-    print(f"Models directory: {MODELS_DIR}", flush=True)
     print(flush=True)
 
-    start = time.time()
+    MODELS_DIR.mkdir(parents=True, exist_ok=True)
 
-    with tqdm(
-        total=4,
-        desc="Overall",
-        bar_format="{l_bar}{bar}| {n_fmt}/{total_fmt} [{elapsed}<{remaining}]",
-        file=sys.stderr,
-    ) as overall_bar:
-        print("[1/3] DWPose models...", flush=True)
-        download_dwpose_models(overall_bar)
-        print(flush=True)
-
-        print("[2/3] MimicMotion checkpoint...", flush=True)
-        download_mimicmotion_checkpoint(overall_bar)
-        print(flush=True)
-
-        print("[3/3] Stable Video Diffusion model...", flush=True)
-        download_svd_model(overall_bar)
-        print(flush=True)
-
-    elapsed = time.time() - start
-    print(f"Downloads completed in {int(elapsed // 60)}m {int(elapsed % 60)}s", flush=True)
+    print("1/4 SVD base model", flush=True)
+    download_svd()
     print(flush=True)
 
-    print("Creating symlinks...", flush=True)
+    print("2/4 StableAnimator weights", flush=True)
+    download_animation_weights()
+    print(flush=True)
+
+    print("3/4 DWPose models", flush=True)
+    download_dwpose()
+    print(flush=True)
+
+    print("4/4 InsightFace antelopev2", flush=True)
+    download_insightface()
+    print(flush=True)
+
     create_symlinks()
     print(flush=True)
 

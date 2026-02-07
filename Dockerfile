@@ -25,18 +25,16 @@ COPY --from=ghcr.io/astral-sh/uv:latest /uv /uvx /usr/local/bin/
 
 WORKDIR /app
 
-# Copy local MimicMotion repo (with loader.py fix)
-COPY MimicMotion/ /app/MimicMotion/
+# Copy StableAnimator repo (source code only, no assets/weights)
+COPY StableAnimator/animation/ /app/StableAnimator/animation/
+COPY StableAnimator/DWPose/ /app/StableAnimator/DWPose/
 
 # Copy dependency spec and install
 COPY pyproject.toml /app/
 RUN uv sync --no-install-project
 
 # Copy application code
-COPY run.py download_models.py mimicmotion_patch.py app.py start.sh /app/
-
-# Bundle sample image and video
-COPY IMG_8502.jpg caramell_dansen.mp4 /app/samples/
+COPY run.py download_models.py start.sh /app/
 
 # ============================================================
 # Stage 2: Runtime image
@@ -65,21 +63,16 @@ COPY --from=builder /app /app
 WORKDIR /app
 
 ENV PATH="/app/.venv/bin:$PATH"
-ENV PYTHONPATH="/app/MimicMotion"
-ENV MIMICMOTION_DIR="/app/MimicMotion"
+ENV PYTHONPATH="/app/StableAnimator"
 ENV MODELS_DIR="/workspace/models"
-ENV MIMICMOTION_MODELS_DIR="/app/MimicMotion/models"
 ENV PYTORCH_CUDA_ALLOC_CONF=max_split_size_mb:256
 ENV PYTHONUNBUFFERED=1
-
-# Gradio UI port
-EXPOSE 7860
 
 # Persistent volume mount point (RunPod convention)
 RUN mkdir -p /workspace
 
-# DWPose uses relative path "models/DWPose/" from workdir /app
-RUN ln -s /app/MimicMotion/models /app/models
+# Create directories for symlinks (populated at runtime by download_models.py)
+RUN mkdir -p /app/checkpoints /app/models
 
 RUN chmod +x /app/start.sh
 
