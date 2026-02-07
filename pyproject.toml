@@ -10,7 +10,7 @@ dependencies = [
     "torchaudio==2.7.0",
     "xformers>=0.0.29",
 
-    "diffusers>=0.29.2",
+    "diffusers>=0.25.0,<0.30",
     "transformers==4.35.2",
     "accelerate==0.25.0",
     "timm==0.4.12",
