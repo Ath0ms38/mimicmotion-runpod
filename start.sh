@@ -20,8 +20,8 @@ python /app/download_models.py
 echo ""
 
 # Look for input files on persistent volume
-IMAGE="${SA_IMAGE:-/workspace/input/image.png}"
-VIDEO="${SA_VIDEO:-/workspace/input/video.mp4}"
+IMAGE="${SA_IMAGE:-/app/samples/IMG_8502.jpg}"
+VIDEO="${SA_VIDEO:-/app/samples/caramell_dansen.mp4}"
 OUTPUT="${SA_OUTPUT:-/workspace/output.mp4}"
 
 if [ ! -f "$IMAGE" ]; then
