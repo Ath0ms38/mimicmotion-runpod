@@ -27,6 +27,7 @@ WORKDIR /app
 
 # Clone StableAnimator and keep only source code (no assets/weights)
 RUN git clone --depth 1 https://github.com/Francis-Rings/StableAnimator.git /tmp/StableAnimator \
+    && mkdir -p /app/StableAnimator \
     && mv /tmp/StableAnimator/animation /app/StableAnimator/animation \
     && mv /tmp/StableAnimator/DWPose /app/StableAnimator/DWPose \
     && rm -rf /tmp/StableAnimator
